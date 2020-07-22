@@ -1,5 +1,6 @@
 import operator
 import numpy as np
+import iteround
 
 
 class Compare(object):
@@ -17,8 +18,6 @@ class Compare(object):
         vector and the consistency ratio; default is 4
     :param comp_type: string, the comparison type of the values in the input matrix, being either
         qualitative or quantitative; valid input: 'quant', 'qual'; default is 'qual'
-    :param iters: integer, number of iterations before the compute_eigenvector function stops;
-        default is 100
     :param random_index: string, the random index estimates used to compute the consistency ratio;
         valid input: 'dd', 'saaty'; default is 'dd'; see the compute_consistency_ratio function for more
         information regarding the different estimates
@@ -32,7 +31,6 @@ class Compare(object):
         self.shape = None
         self.type = comp_type
         self.precision = precision
-        self.iterations = iters
         self.random_index = random_index.lower()
         self.priority_vector = None
         self.consistency_ratio = None
@@ -118,7 +116,7 @@ class Compare(object):
             # If the comparison type is qualitative, compute both the priority vector and the
             # consistency ratio
             else:
-                self.compute_priority_vector(self.matrix, self.iterations)
+                self.compute_priority_vector(self.matrix)
                 self.compute_consistency_ratio()
             # Create the weights dictionary
             comp_dict = dict(zip(self.criteria, self.priority_vector))
@@ -126,40 +124,22 @@ class Compare(object):
         except Exception as error:
             raise AHPException(error)
 
-    def compute_priority_vector(self, matrix, iterations, comp_eigenvector=None):
+    def compute_priority_vector(self, matrix, comp_eigenvector=None):
         """
         Computes the priority vector of a matrix. Sets the 'remainder' and
         'priority_vector' properties of the Compare object.
         :param matrix: numpy matrix, the matrix from which to derive the priority vector
-        :param iterations: integer, number of iterations to run before the function stops
         :param comp_eigenvector: numpy array, a comparison eigenvector used during
             recursion; DO NOT MODIFY
         """
 
-        # Compute the principal eigenvector by normalizing the rows of a newly squared matrix
-        sq_matrix = np.linalg.matrix_power(matrix, 2)
-        row_sum = np.sum(sq_matrix, 1)
-        total_sum = np.sum(row_sum)
-        princ_eigenvector = np.divide(row_sum, total_sum).round(self.precision)
-        # Create a zero matrix as the comparison eigenvector if this is the first iteration
-        if comp_eigenvector is None:
-            comp_eigenvector = np.zeros(self.shape)
-        # Compute the difference between the principal and comparison eigenvectors
-        remainder = np.subtract(princ_eigenvector, comp_eigenvector).round(self.precision)
-        # If the difference between the two eigenvectors is zero (after rounding to the self.precision variable),
-        # set the current principal eigenvector as the priority vector for the matrix
-        if not np.any(remainder):
-            self.priority_vector = princ_eigenvector
+        try:
+            w,v = np.linalg.eig(self.matrix)
+            self.priority_vector = v[:,np.argmax(w.real)].real/v[:,np.argmax(w.real)].real.sum() # stochastic eigenvector
             return
-        # Recursively run the function until either there is no difference between the principal and
-        # comparison eigenvectors, or until the predefined number of iterations has been met, in which
-        # case set the last principal eigenvector as the priority vector
-        iterations -= 1
-        if iterations > 0:
-            return self.compute_priority_vector(sq_matrix, iterations, princ_eigenvector)
-        else:
-            self.priority_vector = princ_eigenvector
-            return
+
+        except np.linalg.LinAlgError as error:
+            raise AHPException(error)
 
     def compute_consistency_ratio(self):
         """
@@ -283,9 +263,9 @@ class Compose(object):
 
     def report(self):
         print('Name:', self.name)
-        sorted_weights = sorted(self.weights[self.parent.name].items(), key=operator.itemgetter(1), reverse=True)
+        sorted_weights = sorted(iteround.saferound(self.weights[self.parent.name], self.precision).items(), key=operator.itemgetter(1), reverse=True)
         for k, v in sorted_weights:
-            print('\t{}: {}'.format(k, np.round(v, self.precision)))
+            print('\t{}: {}'.format(k,v))
         print()
 
         # print(self.parent.weights)
